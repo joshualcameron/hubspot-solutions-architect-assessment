@@ -705,9 +705,9 @@ This project was created as a technical assessment for the HubSpot Solutions Arc
 For questions about this implementation, please contact:
 
 **Joshua Cameron**  
-Email: joshua.l.cameron@gmail.com  
+Email: jcameron@hubspot.com
 GitHub: [@joshualcameron](https://github.com/joshualcameron)  
-LinkedIn: [linkedin.com/in/joshualcameron](https://linkedin.com/in/joshualcameron)
+LinkedIn: [linkedin.com/in/joshua-cameron](https://www.linkedin.com/in/joshua-cameron/)
 
 ---
 
