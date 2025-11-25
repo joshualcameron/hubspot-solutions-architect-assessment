@@ -175,73 +175,6 @@
                 </form>
             </div>
 
-            <div class="section">
-                <h2>Create New Deal (Subscription Conversion)</h2>
-                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Track free trial → paid subscription conversions</p>
-                <form id="createDealForm">
-                    <div class="form-group">
-                        <label>Deal Name *</label>
-                        <input type="text" id="dealName" required placeholder="e.g., Premium Subscription - Annual">
-                    </div>
-                    <div class="form-group">
-                        <label>Amount (Auto-calculated from line items)</label>
-                        <input type="number" id="dealAmount" readonly style="background: #f0f0f0;">
-                    </div>
-                    <div class="form-group">
-                        <label>Pipeline *</label>
-                        <select id="dealPipeline" required>
-                            <option value="830876231">Free Trial (Subscription Conversions)</option>
-                            <option value="830941081">Ecommerce Orders</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Stage *</label>
-                        <select id="dealStage" required>
-                            <option value="">Select stage...</option>
-                            <option value="1231184770">Trial Activated</option>
-                            <option value="1231184775">Converted to Paid</option>
-                            <option value="1231184776">Lost</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Associate with Contact *</label>
-                        <select id="dealContactId" required>
-                            <option value="">Select contact...</option>
-                        </select>
-                    </div>
-                    
-                    <h3 style="margin-top: 20px; margin-bottom: 10px; font-size: 16px; color: #2d3e50;">Software Package (Line Items)</h3>
-                    <div id="dealLineItems">
-                        <div class="deal-line-item" style="background: #f9f9f9; padding: 12px; border-radius: 4px; margin-bottom: 10px;">
-                            <div class="form-group">
-                                <label>Product/Package</label>
-                                <select class="deal-product" style="width: 100%;">
-                                    <option value="">Select product...</option>
-                                </select>
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-                                <div class="form-group">
-                                    <label>Quantity</label>
-                                    <input type="number" class="deal-quantity" min="1" value="1">
-                                </div>
-                                <div class="form-group">
-                                    <label>Price</label>
-                                    <input type="number" class="deal-price" step="0.01" readonly style="background: #eee;">
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <button type="button" onclick="addDealLineItem()" style="background: #667eea; margin-bottom: 15px;">+ Add Another Product</button>
-                    
-                    <div style="background: #f0f0f0; padding: 12px; border-radius: 4px; margin-bottom: 15px;">
-                        <strong>Total: $<span id="dealTotal">0.00</span></strong>
-                    </div>
-                    
-                    <button type="submit">Create Deal</button>
-                </form>
-            </div>
-        </div>
 
         <div class="section">
             <h2>All Contacts</h2>
@@ -338,14 +271,137 @@
         window.onload = () => {
             loadContacts();
             loadCompanies();
-            loadProducts();
             initializeOrderForm();
         };
+async function loadContacts() {
+            const contactsList = document.getElementById('contactsList');
+            contactsList.innerHTML = '<p style="color: #666;">Loading contacts...</p>';
+            
+            try {
+                const response = await fetch(`${API_BASE}/contacts`);
+                const data = await response.json();
+                const dealContactSelect = document.getElementById('dealContactId');
+                
+                if (data.results && data.results.length > 0) {
+                    contactsList.innerHTML = `
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>First Name</th>
+                                    <th>Last Name</th>
+                                    <th>Job Title</th>
+                                    <th>Phone Number</th>
+                                    <th>Email</th>
+                                    <th>Active Subscription?</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.results.map(contact => `
+                                    <tr>
+                                        <td>${contact.properties.firstname || '-'}</td>
+                                        <td>${contact.properties.lastname || '-'}</td>
+                                        <td>${contact.properties.jobtitle || '-'}</td>
+                                        <td>${contact.properties.phone || '-'}</td>
+                                        <td>${contact.properties.email || '-'}</td>
+                                        <td id="sub-${contact.id}"><span style="color: #999;">Checking...</span></td>
+                                        <td>
+                                            <button onclick="viewContactOrders('${contact.id}')" style="padding: 6px 12px; font-size: 12px; background: #667eea; margin: 0;">
+                                                View Orders
+                                            </button>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    `;
 
+                    dealContactSelect.innerHTML = '<option value="">Select contact...</option>' + 
+                        data.results.map(contact => `
+                            <option value="${contact.id}">
+                                ${contact.properties.firstname || ''} ${contact.properties.lastname || ''} (${contact.properties.email || ''})
+                            </option>
+                        `).join('');
+                    
+                    checkSubscriptionStatus(data.results);
+                } else {
+                    contactsList.innerHTML = '<p style="color: #666;">No contacts found. Create one above!</p>';
+                }
+            } catch (error) {
+                contactsList.innerHTML = '<p style="color: #dc3545;">Error loading contacts.</p>';
+                showStatus(`Error loading contacts: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkSubscriptionStatus(contacts) {
+            for (const contact of contacts) {
+                try {
+                    const dealsResponse = await fetch(`${API_BASE}/contacts/${contact.id}/deals`);
+                    const deals = await dealsResponse.json();
+                    
+                    const activeSubscription = deals.results?.find(deal => 
+                        deal.properties.pipeline === '830876231' && 
+                        deal.properties.dealstage === '1231184775'
+                    );
+                    
+                    const cell = document.getElementById(`sub-${contact.id}`);
+                    if (cell) {
+                        if (activeSubscription) {
+                            cell.innerHTML = `<span onclick="viewSubscriptionDetails('${activeSubscription.id}')" style="color: #28a745; font-weight: 600; cursor: pointer; text-decoration: underline;">Yes ✓</span>`;
+                        } else {
+                            cell.innerHTML = `<span style="color: #dc3545;">No</span>`;
+                        }
+                    }
+                } catch (error) {
+                    const cell = document.getElementById(`sub-${contact.id}`);
+                    if (cell) {
+                        cell.innerHTML = `<span style="color: #dc3545;">No</span>`;
+                    }
+                }
+            }
+        }
+
+        async function viewSubscriptionDetails(dealId) {
+            try {
+                const response = await fetch(`${API_BASE}/orders/${dealId}/line-items`);
+                const lineItems = await response.json();
+                
+                if (lineItems.results && lineItems.results.length > 0) {
+                    const subscriptionDetails = lineItems.results.map(item => 
+                        `${item.properties.name} - $${item.properties.price || 0}`
+                    ).join('\n');
+                    
+                    alert(`Active Subscription:\n\n${subscriptionDetails}`);
+                } else {
+                    alert('Subscription active, but no line item details found.');
+                }
+            } catch (error) {
+                showStatus(`Error loading subscription details: ${error.message}`, 'error');
+            }
+        }
+
+        async function loadCompanies() {
+            try {
+                const response = await fetch(`${API_BASE}/companies`);
+                const data = await response.json();
+                
+                const companySelect = document.getElementById('contactCompanyId');
+                if (data.results && data.results.length > 0) {
+                    companySelect.innerHTML = '<option value="">None</option>' + 
+                        data.results.map(company => `
+                            <option value="${company.id}">
+                                ${company.properties.name || 'Unnamed Company'}
+                            </option>
+                        `).join('');
+                }
+            } catch (error) {
+                console.error('Error loading companies:', error);
+            }
+        }
         function showStatus(message, type) {
             const status = document.getElementById('statusMessage');
             status.textContent = message;
-            status.className = 'status ' + type;
+            status.className = `status ${type}`;
             setTimeout(() => {
                 status.className = 'status';
             }, 5000);
@@ -366,7 +422,7 @@
             };
 
             try {
-                const response = await fetch(API_BASE + '/contacts', {
+                const response = await fetch(`${API_BASE}/contacts`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(contactData)
@@ -378,246 +434,100 @@
                     loadContacts();
                 } else {
                     const error = await response.json();
-                    showStatus('Error: ' + (error.message || 'Failed to create contact'), 'error');
+                    showStatus(`Error: ${error.message || 'Failed to create contact'}`, 'error');
                 }
             } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
+                showStatus(`Error: ${error.message}`, 'error');
             }
         });
 
         document.getElementById('createDealForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            const lineItems = [];
-            document.querySelectorAll('.deal-line-item').forEach(item => {
-                const productSelect = item.querySelector('.deal-product');
-                const productId = productSelect.value;
-                const productName = productSelect.options[productSelect.selectedIndex]?.text || '';
-                const quantity = parseInt(item.querySelector('.deal-quantity').value);
-                const price = parseFloat(item.querySelector('.deal-price').value);
-                
-                if (productId && quantity && price) {
-                    lineItems.push({ 
-                        productId,
-                        name: productName.split(' - $')[0],
-                        quantity, 
-                        price 
-                    });
-                }
-            });
-
             const dealData = {
                 dealProperties: {
                     dealname: document.getElementById('dealName').value,
-                    amount: document.getElementById('dealAmount').value || '0',
+                    amount: document.getElementById('dealAmount').value,
                     dealstage: document.getElementById('dealStage').value,
                     pipeline: document.getElementById('dealPipeline').value
                 },
-                contactId: document.getElementById('dealContactId').value,
-                lineItems: lineItems
+                contactId: document.getElementById('dealContactId').value
             };
 
             try {
-                const response = await fetch(API_BASE + '/deals', {
+                const response = await fetch(`${API_BASE}/deals`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(dealData)
                 });
 
                 if (response.ok) {
-                    showStatus('Deal created successfully with line items!', 'success');
+                    showStatus('Deal created successfully!', 'success');
                     e.target.reset();
-                    document.getElementById('dealTotal').textContent = '0.00';
-                    loadContacts();
                 } else {
                     const error = await response.json();
-                    showStatus('Error: ' + (error.message || 'Failed to create deal'), 'error');
+                    showStatus(`Error: ${error.message || 'Failed to create deal'}`, 'error');
                 }
             } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
+                showStatus(`Error: ${error.message}`, 'error');
             }
         });
-
-        async function loadContacts() {
-            const contactsList = document.getElementById('contactsList');
-            contactsList.innerHTML = '<p style="color: #666;">Loading contacts...</p>';
-            
+async function viewSubscriptionDetails(dealId) {
             try {
-                const response = await fetch(API_BASE + '/contacts');
-                const data = await response.json();
-                const dealContactSelect = document.getElementById('dealContactId');
-                
-                if (data.results && data.results.length > 0) {
-                    contactsList.innerHTML = '<table><thead><tr><th>First Name</th><th>Last Name</th><th>Job Title</th><th>Phone Number</th><th>Email</th><th>Active Subscription?</th><th>Actions</th></tr></thead><tbody>' +
-                        data.results.map(contact => '<tr><td>' + (contact.properties.firstname || '-') + '</td><td>' + (contact.properties.lastname || '-') + '</td><td>' + (contact.properties.jobtitle || '-') + '</td><td>' + (contact.properties.phone || '-') + '</td><td>' + (contact.properties.email || '-') + '</td><td id="sub-' + contact.id + '"><span style="color: #999;">Checking...</span></td><td><button onclick="viewContactOrders(\'' + contact.id + '\')" style="padding: 6px 12px; font-size: 12px; background: #667eea; margin: 0;">View Orders</button></td></tr>').join('') +
-                        '</tbody></table>';
-
-                    dealContactSelect.innerHTML = '<option value="">Select contact...</option>' + 
-                        data.results.map(contact => '<option value="' + contact.id + '">' + (contact.properties.firstname || '') + ' ' + (contact.properties.lastname || '') + ' (' + (contact.properties.email || '') + ')</option>').join('');
-                    
-                    checkSubscriptionStatus(data.results);
-                } else {
-                    contactsList.innerHTML = '<p style="color: #666;">No contacts found. Create one above!</p>';
-                }
-            } catch (error) {
-                contactsList.innerHTML = '<p style="color: #dc3545;">Error loading contacts.</p>';
-                showStatus('Error loading contacts: ' + error.message, 'error');
-            }
-        }
-
-        async function checkSubscriptionStatus(contacts) {
-            for (const contact of contacts) {
-                try {
-                    const dealsResponse = await fetch(API_BASE + '/contacts/' + contact.id + '/deals');
-                    const deals = await dealsResponse.json();
-                    
-                    const activeSubscription = deals.results && deals.results.find(deal => 
-                        deal.properties.pipeline === '830876231' && 
-                        deal.properties.dealstage === '1231184775'
-                    );
-                    
-                    const cell = document.getElementById('sub-' + contact.id);
-                    if (cell) {
-                        if (activeSubscription) {
-                            cell.innerHTML = '<span onclick="viewSubscriptionDetails(\'' + activeSubscription.id + '\')" style="color: #28a745; font-weight: 600; cursor: pointer; text-decoration: underline;">Yes ✓</span>';
-                        } else {
-                            cell.innerHTML = '<span style="color: #dc3545;">No</span>';
-                        }
-                    }
-                } catch (error) {
-                    const cell = document.getElementById('sub-' + contact.id);
-                    if (cell) {
-                        cell.innerHTML = '<span style="color: #dc3545;">No</span>';
-                    }
-                }
-            }
-        }
-
-        async function viewSubscriptionDetails(dealId) {
-            try {
-                const response = await fetch(API_BASE + '/orders/' + dealId + '/line-items');
+                // Get line items for the subscription deal
+                const response = await fetch(`${API_BASE}/orders/${dealId}/line-items`);
                 const lineItems = await response.json();
                 
                 if (lineItems.results && lineItems.results.length > 0) {
                     const subscriptionDetails = lineItems.results.map(item => 
-                        item.properties.name + ' - $' + (item.properties.price || 0)
+                        `${item.properties.name} - $${item.properties.price || 0}`
                     ).join('\n');
                     
-                    alert('Active Subscription:\n\n' + subscriptionDetails);
+                    alert(`Active Subscription:\n\n${subscriptionDetails}`);
                 } else {
                     alert('Subscription active, but no line item details found.');
                 }
             } catch (error) {
-                showStatus('Error loading subscription details: ' + error.message, 'error');
+                showStatus(`Error loading subscription details: ${error.message}`, 'error');
             }
         }
-
         async function loadCompanies() {
             try {
-                const response = await fetch(API_BASE + '/companies');
+                const response = await fetch(`${API_BASE}/companies`);
                 const data = await response.json();
                 
                 const companySelect = document.getElementById('contactCompanyId');
                 if (data.results && data.results.length > 0) {
                     companySelect.innerHTML = '<option value="">None</option>' + 
-                        data.results.map(company => '<option value="' + company.id + '">' + (company.properties.name || 'Unnamed Company') + '</option>').join('');
+                        data.results.map(company => `
+                            <option value="${company.id}">
+                                ${company.properties.name || 'Unnamed Company'}
+                            </option>
+                        `).join('');
                 }
             } catch (error) {
                 console.error('Error loading companies:', error);
             }
         }
 
-        async function loadProducts() {
-            try {
-                const response = await fetch(API_BASE + '/products');
-                const data = await response.json();
-                
-                if (data.results && data.results.length > 0) {
-                    updateDealProductDropdowns(data.results);
-                }
-            } catch (error) {
-                console.error('Error loading products:', error);
-            }
-        }
-
-        function updateDealProductDropdowns(products) {
-            document.querySelectorAll('.deal-product').forEach(select => {
-                select.innerHTML = '<option value="">Select product...</option>' + 
-                    products.map(product => '<option value="' + product.id + '" data-price="' + (product.properties.price || 0) + '">' + (product.properties.name || 'Unnamed Product') + ' - $' + (product.properties.price || 0) + '</option>').join('');
-            });
-        }
-
-        function addDealLineItem() {
-            const container = document.getElementById('dealLineItems');
-            const newItem = container.querySelector('.deal-line-item').cloneNode(true);
-            
-            newItem.querySelectorAll('input').forEach(input => {
-                if (input.classList.contains('deal-quantity')) {
-                    input.value = '1';
-                } else {
-                    input.value = '';
-                }
-            });
-            
-            const removeBtn = document.createElement('button');
-            removeBtn.textContent = '× Remove';
-            removeBtn.type = 'button';
-            removeBtn.style.cssText = 'background: #dc3545; margin-top: 10px;';
-            removeBtn.onclick = function() {
-                newItem.remove();
-                calculateDealTotal();
-            };
-            newItem.appendChild(removeBtn);
-            
-            container.appendChild(newItem);
-            loadProducts();
-        }
-
-        function calculateDealTotal() {
-            let total = 0;
-            document.querySelectorAll('.deal-line-item').forEach(item => {
-                const quantity = parseFloat(item.querySelector('.deal-quantity').value) || 0;
-                const price = parseFloat(item.querySelector('.deal-price').value) || 0;
-                total += quantity * price;
-            });
-            
-            document.getElementById('dealTotal').textContent = total.toFixed(2);
-            document.getElementById('dealAmount').value = total.toFixed(2);
-        }
-
-        document.addEventListener('change', function(e) {
-            if (e.target.classList.contains('deal-product')) {
-                const selectedOption = e.target.options[e.target.selectedIndex];
-                const price = selectedOption.getAttribute('data-price') || 0;
-                const lineItem = e.target.closest('.deal-line-item');
-                lineItem.querySelector('.deal-price').value = price;
-                calculateDealTotal();
-            }
-            
-            if (e.target.classList.contains('deal-quantity')) {
-                calculateDealTotal();
-            }
-        });
-
         async function viewContactOrders(contactId) {
             try {
-                const response = await fetch(API_BASE + '/contacts/' + contactId + '/deals');
+                const response = await fetch(`${API_BASE}/contacts/${contactId}/deals`);
                 const deals = await response.json();
                 
-                const orders = deals.results ? deals.results.filter(function(deal) {
-                    return deal.properties.pipeline === '830941081';
-                }) : [];
-                
+                const orders = deals.results ? deals.results.filter(deal => 
+                    deal.properties.pipeline === '830941081'
+                ) : [];                
                 if (orders.length > 0) {
-                    const orderDetails = orders.map(function(order) {
-                        return (order.properties.dealname || 'Unnamed Order') + ' - $' + (order.properties.amount || 0);
-                    }).join('\n');
-                    alert('This contact has ' + orders.length + ' order(s):\n\n' + orderDetails);
+                    const orderDetails = orders.map(order => 
+                        `${order.properties.dealname || 'Unnamed Order'} - $${order.properties.amount || 0}`
+                    ).join('\n');
+                    alert(`This contact has ${orders.length} order(s):\n\n${orderDetails}`);
                 } else {
                     alert('No orders associated with this contact yet.');
                 }
             } catch (error) {
-                showStatus('Error loading orders: ' + error.message, 'error');
+                showStatus(`Error loading orders: ${error.message}`, 'error');
             }
         }
 
@@ -625,7 +535,7 @@
             loadOrders();
             updateOrderContactDropdown();
             
-            document.addEventListener('input', function(e) {
+            document.addEventListener('input', (e) => {
                 if (e.target.classList.contains('item-quantity') || e.target.classList.contains('item-price')) {
                     calculateLineItemSubtotals();
                 }
@@ -634,19 +544,22 @@
 
         async function updateOrderContactDropdown() {
             try {
-                const response = await fetch(API_BASE + '/contacts');
+                const response = await fetch(`${API_BASE}/contacts`);
                 const data = await response.json();
                 
                 const select = document.getElementById('orderContactId');
                 if (data.results && data.results.length > 0) {
                     select.innerHTML = '<option value="">Select customer...</option>' + 
-                        data.results.map(contact => '<option value="' + contact.id + '">' + (contact.properties.firstname || '') + ' ' + (contact.properties.lastname || '') + ' (' + (contact.properties.email || '') + ')</option>').join('');
+                        data.results.map(contact => `
+                            <option value="${contact.id}">
+                                ${contact.properties.firstname || ''} ${contact.properties.lastname || ''} (${contact.properties.email || ''})
+                            </option>
+                        `).join('');
                 }
             } catch (error) {
                 console.error('Error loading contacts for orders:', error);
             }
         }
-
         function addLineItem() {
             const container = document.getElementById('lineItemsContainer');
             const newItem = container.querySelector('.line-item').cloneNode(true);
@@ -657,13 +570,12 @@
                 } else {
                     input.value = '1';
                 }
-            });
-            
+            });   
             const removeBtn = document.createElement('button');
             removeBtn.textContent = '× Remove';
             removeBtn.type = 'button';
             removeBtn.style.cssText = 'background: rgba(255,0,0,0.3); margin-top: 10px;';
-            removeBtn.onclick = function() {
+            removeBtn.onclick = () => {
                 newItem.remove();
                 calculateLineItemSubtotals();
             };
@@ -679,14 +591,14 @@
                 const price = parseFloat(item.querySelector('.item-price').value) || 0;
                 const subtotal = quantity * price;
                 
-                item.querySelector('.item-subtotal').value = '$' + subtotal.toFixed(2);
+                item.querySelector('.item-subtotal').value = `$${subtotal.toFixed(2)}`;
                 total += subtotal;
             });
             
-            document.getElementById('orderTotal').textContent = '$' + total.toFixed(2);
+            document.getElementById('orderTotal').textContent = `$${total.toFixed(2)}`;
         }
 
-        document.getElementById('createOrderForm').addEventListener('submit', async function(e) {
+        document.getElementById('createOrderForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const lineItems = [];
@@ -696,7 +608,7 @@
                 const price = parseFloat(item.querySelector('.item-price').value);
                 
                 if (name && quantity && price) {
-                    lineItems.push({ name: name, quantity: quantity, price: price });
+                    lineItems.push({ name, quantity, price });
                 }
             });
 
@@ -705,12 +617,12 @@
                 return;
             }
 
-            const total = lineItems.reduce(function(sum, item) { return sum + (item.quantity * item.price); }, 0);
+            const total = lineItems.reduce((sum, item) => sum + (item.quantity * item.price), 0);
 
             const orderData = {
                 orderData: {
                     orderNumber: document.getElementById('orderNumber').value,
-                    orderName: 'Order ' + document.getElementById('orderNumber').value,
+                    orderName: `Order ${document.getElementById('orderNumber').value}`,
                     totalAmount: total.toFixed(2),
                     orderStatus: document.getElementById('orderStatus').value,
                     status: 'closedwon'
@@ -720,7 +632,7 @@
             };
 
             try {
-                const response = await fetch(API_BASE + '/orders', {
+                const response = await fetch(`${API_BASE}/orders`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(orderData)
@@ -733,47 +645,55 @@
                     loadOrders();
                 } else {
                     const error = await response.json();
-                    showStatus('Error: ' + (error.message || 'Failed to create order'), 'error');
+                    showStatus(`Error: ${error.message || 'Failed to create order'}`, 'error');
                 }
             } catch (error) {
-                showStatus('Error: ' + error.message, 'error');
+                showStatus(`Error: ${error.message}`, 'error');
             }
         });
 
         async function loadOrders() {
             try {
-                const response = await fetch(API_BASE + '/orders');
+                const response = await fetch(`${API_BASE}/orders`);
                 const data = await response.json();
                 
                 const ordersList = document.getElementById('ordersList');
                 
                 if (data.results && data.results.length > 0) {
-                    ordersList.innerHTML = data.results.map(function(order) {
-                        return '<div style="border: 1px solid #e0e0e0; padding: 15px; border-radius: 6px; background: #fafafa; margin-bottom: 10px; cursor: pointer;" onclick="viewOrderDetails(\'' + order.id + '\')"><div style="font-weight: 600; color: #2d3e50; margin-bottom: 5px;">' + (order.properties.dealname || 'Unnamed Order') + '</div><div style="color: #666; font-size: 14px; margin-top: 5px;">Amount: $' + (order.properties.amount || '0') + '</div><div style="color: #888; font-size: 13px;">Status: Completed</div></div>';
-                    }).join('');
+                    ordersList.innerHTML = data.results.map(order => `
+                        <div style="border: 1px solid #e0e0e0; padding: 15px; border-radius: 6px; background: #fafafa; margin-bottom: 10px; cursor: pointer;" onclick="viewOrderDetails('${order.id}')">
+                            <div style="font-weight: 600; color: #2d3e50; margin-bottom: 5px;">
+                                ${order.properties.dealname || 'Unnamed Order'}
+                            </div>
+                            <div style="color: #666; font-size: 14px; margin-top: 5px;">
+                                Amount: $${order.properties.amount || '0'}
+                            </div>
+                            <div style="color: #888; font-size: 13px;">Status: Completed</div>
+                        </div>
+                    `).join('');
                 } else {
                     ordersList.innerHTML = '<p style="color: #666;">No orders found. Create one above!</p>';
                 }
             } catch (error) {
-                showStatus('Error loading orders: ' + error.message, 'error');
+                showStatus(`Error loading orders: ${error.message}`, 'error');
             }
         }
 
         async function viewOrderDetails(orderId) {
             try {
-                const response = await fetch(API_BASE + '/orders/' + orderId + '/line-items');
+                const response = await fetch(`${API_BASE}/orders/${orderId}/line-items`);
                 const lineItems = await response.json();
                 
                 if (lineItems.results && lineItems.results.length > 0) {
-                    const details = lineItems.results.map(function(item) {
-                        return item.properties.name + ' - Qty: ' + item.properties.quantity + ' × $' + item.properties.price + ' = $' + item.properties.amount;
-                    }).join('\n');
-                    alert('Order Line Items:\n\n' + details);
+                    const details = lineItems.results.map(item => 
+                        `${item.properties.name} - Qty: ${item.properties.quantity} × $${item.properties.price} = $${item.properties.amount}`
+                    ).join('\n');
+                    alert(`Order Line Items:\n\n${details}`);
                 } else {
                     alert('No line items found for this order.');
                 }
             } catch (error) {
-                showStatus('Error loading order details: ' + error.message, 'error');
+                showStatus(`Error loading order details: ${error.message}`, 'error');
             }
         }
 
@@ -790,13 +710,15 @@
             responseDiv.textContent = '🤔 Thinking...';
 
             try {
-                const contactsRes = await fetch(API_BASE + '/contacts');
-                const dealsRes = await fetch(API_BASE + '/deals');
+                const [contactsRes, dealsRes] = await Promise.all([
+                    fetch(`${API_BASE}/contacts`),
+                    fetch(`${API_BASE}/deals`)
+                ]);
 
                 const contacts = await contactsRes.json();
                 const deals = await dealsRes.json();
 
-                const response = await fetch(API_BASE + '/ai-insights', {
+                const response = await fetch(`${API_BASE}/ai-insights`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -813,10 +735,10 @@
                     responseDiv.textContent = result.insight || result.message;
                 } else {
                     const error = await response.json();
-                    responseDiv.textContent = 'Error: ' + (error.message || 'AI request failed');
+                    responseDiv.textContent = `Error: ${error.message || 'AI request failed'}`;
                 }
             } catch (error) {
-                responseDiv.textContent = 'Error: ' + error.message;
+                responseDiv.textContent = `Error: ${error.message}`;
             }
         }
     </script>
